@@ -630,13 +630,30 @@ export function App() {
                     ))}
                   </div>
                 ) : (
-                  <div className="p-8 text-center bg-white border border-dashed border-slate-200 rounded-2xl">
-                    <p className="text-xs text-slate-400 font-medium">No folders found</p>
+                  <div className="p-8 text-center bg-white border border-slate-200/80 rounded-2xl shadow-2xs">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-[#5D5FEF] flex items-center justify-center mx-auto mb-3">
+                      <FolderPlus className="w-6 h-6" />
+                    </div>
+                    <p className="text-sm font-semibold text-slate-800 mb-1">Organize your workspace with folders</p>
+                    <p className="text-xs text-slate-400 mb-4">Create a custom folder or pick a template below to get started.</p>
+                    
+                    <div className="flex flex-wrap items-center justify-center gap-2 max-w-md mx-auto mb-3">
+                      {['Design Assets', 'Financial Reports', 'Marketing', 'Legal & Contracts'].map(name => (
+                        <button
+                          key={name}
+                          onClick={() => handleCreateFolder(name)}
+                          className="px-3 py-1.5 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 rounded-xl text-xs font-medium text-slate-600 hover:text-[#5D5FEF] transition-all cursor-pointer"
+                        >
+                          + {name}
+                        </button>
+                      ))}
+                    </div>
+
                     <button
                       onClick={() => setIsNewFolderModalOpen(true)}
-                      className="mt-2 text-xs text-[#5D5FEF] font-semibold hover:underline cursor-pointer"
+                      className="text-xs text-[#5D5FEF] font-semibold hover:underline cursor-pointer"
                     >
-                      Create your first folder →
+                      + Custom folder name
                     </button>
                   </div>
                 )}

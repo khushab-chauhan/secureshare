@@ -11,7 +11,11 @@ import {
   ShieldCheck, 
   ExternalLink,
   Calendar,
-  HardDrive
+  HardDrive,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  Maximize2
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { FileItem } from '../types';
@@ -39,10 +43,14 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
 }) => {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [rotation, setRotation] = useState(0);
 
   useEffect(() => {
     if (isOpen && file) {
       setIsLoadingUrl(true);
+      setZoomLevel(1);
+      setRotation(0);
       api.getDownloadUrl(file.id)
         .then(res => setDownloadUrl(res.download_url))
         .catch(err => {
@@ -55,6 +63,17 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
     }
   }, [isOpen, file]);
 
+  // Keyboard shortcut: Esc to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !file) return null;
 
   const isImage = file.type === 'png';
@@ -62,45 +81,80 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
 
   const getBadgeStyle = (type: string) => {
     switch (type) {
-      case 'pdf': return 'bg-red-100 text-red-600';
-      case 'png': return 'bg-emerald-100 text-emerald-700';
-      case 'docx': return 'bg-blue-100 text-blue-700';
-      case 'xlsx': return 'bg-emerald-100 text-emerald-800';
-      default: return 'bg-slate-100 text-slate-700';
+      case 'pdf': return 'bg-red-500 text-white';
+      case 'png': return 'bg-emerald-500 text-white';
+      case 'docx': return 'bg-blue-500 text-white';
+      case 'xlsx': return 'bg-teal-500 text-white';
+      default: return 'bg-slate-600 text-white';
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 sm:p-6 animate-in fade-in duration-200">
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-3 sm:p-6 animate-in fade-in duration-200">
       
-      {/* Modal Container */}
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[85vh] max-h-[850px] flex flex-col overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-200">
+      {/* ── Modal Container ── */}
+      <div className="bg-slate-900 text-white rounded-3xl shadow-2xl w-full max-w-5xl h-[88vh] max-h-[900px] flex flex-col overflow-hidden border border-slate-800 animate-in zoom-in-95 duration-200">
         
         {/* ── Top Bar ── */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white/95">
+        <div className="px-6 py-3.5 border-b border-slate-800/90 flex items-center justify-between shrink-0 bg-slate-900/95">
           <div className="flex items-center gap-3 min-w-0 mr-4">
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider shrink-0 ${getBadgeStyle(file.type)}`}>
+            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider shrink-0 ${getBadgeStyle(file.type)}`}>
               {file.type}
             </span>
             <div className="min-w-0">
-              <h2 className="font-bold text-slate-900 text-base truncate" title={file.name}>
+              <h2 className="font-semibold text-slate-100 text-sm truncate" title={file.name}>
                 {file.name}
               </h2>
-              <p className="text-xs text-slate-400 font-medium">
+              <p className="text-[11px] text-slate-400">
                 {file.size} • {file.updatedTime}
               </p>
             </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Action Toolbar */}
           <div className="flex items-center gap-1.5 shrink-0">
+            
+            {/* Image Viewer Controls */}
+            {isImage && (
+              <div className="hidden sm:flex items-center gap-1 bg-slate-800/80 rounded-xl p-1 border border-slate-700/60 mr-2">
+                <button
+                  onClick={() => setZoomLevel(prev => Math.min(prev + 0.25, 3))}
+                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors cursor-pointer"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setZoomLevel(prev => Math.max(prev - 0.25, 0.5))}
+                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setRotation(prev => (prev + 90) % 360)}
+                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors cursor-pointer"
+                  title="Rotate"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => { setZoomLevel(1); setRotation(0); }}
+                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors cursor-pointer"
+                  title="Reset view"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* Star button */}
             <button
               onClick={() => onToggleStar(file.id)}
               className={`p-2 rounded-xl transition-colors cursor-pointer ${
                 file.isStarred
-                  ? 'text-amber-500 bg-amber-50 hover:bg-amber-100'
-                  : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
+                  ? 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
+                  : 'text-slate-400 hover:text-amber-400 hover:bg-slate-800'
               }`}
               title={file.isStarred ? 'Unstar' : 'Star file'}
             >
@@ -110,7 +164,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
             {/* Rename button */}
             <button
               onClick={() => onRename(file)}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               title="Rename file"
             >
               <Edit2 className="w-4 h-4" />
@@ -119,7 +173,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
             {/* Share button */}
             <button
               onClick={() => onOpenShare(file.name)}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               title="Share file"
             >
               <Share2 className="w-4 h-4" />
@@ -128,7 +182,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
             {/* Download button */}
             <button
               onClick={() => onDownload(file.id, file.name)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#5D5FEF] hover:bg-[#4F46E5] rounded-xl transition-all cursor-pointer shadow-xs ml-1"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#5D5FEF] hover:bg-[#4F46E5] rounded-xl transition-all cursor-pointer shadow-sm ml-1"
               title="Download file"
             >
               <Download className="w-3.5 h-3.5" />
@@ -141,7 +195,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                 onDelete(file.id);
                 onClose();
               }}
-              className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+              className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
               title="Move to Trash"
             >
               <Trash2 className="w-4 h-4" />
@@ -150,7 +204,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
             {/* Close button */}
             <button
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer ml-1"
+              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer ml-1"
               title="Close (Esc)"
             >
               <X className="w-5 h-5" />
@@ -159,22 +213,26 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
         </div>
 
         {/* ── Preview Content Body ── */}
-        <div className="flex-1 bg-slate-50/70 p-4 sm:p-6 overflow-hidden flex items-center justify-center">
+        <div className="flex-1 bg-slate-950/60 p-4 sm:p-6 overflow-hidden flex items-center justify-center relative select-none">
           {isLoadingUrl ? (
             <div className="flex flex-col items-center gap-3 text-slate-400">
               <Loader2 className="w-8 h-8 animate-spin text-[#5D5FEF]" />
-              <p className="text-xs font-medium">Loading secure preview...</p>
+              <p className="text-xs font-medium">Fetching secure encrypted stream...</p>
             </div>
           ) : isImage && downloadUrl ? (
-            <div className="w-full h-full flex items-center justify-center p-2">
+            <div className="w-full h-full flex items-center justify-center p-2 overflow-auto">
               <img
                 src={downloadUrl}
                 alt={file.name}
-                className="max-w-full max-h-full object-contain rounded-2xl shadow-md border border-slate-200/80 bg-white"
+                style={{
+                  transform: `scale(${zoomLevel}) rotate(${rotation}deg)`,
+                  transition: 'transform 0.2s ease-out'
+                }}
+                className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl bg-black/20"
               />
             </div>
           ) : isPdf && downloadUrl ? (
-            <div className="w-full h-full bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div className="w-full h-full bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-slate-700/40">
               <iframe
                 src={`${downloadUrl}#toolbar=0`}
                 title={file.name}
@@ -182,45 +240,45 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
               />
             </div>
           ) : (
-            /* Non-image / Non-PDF or Document Preview Card */
-            <div className="bg-white rounded-3xl p-8 sm:p-12 border border-slate-200/90 shadow-sm max-w-md w-full text-center">
-              <div className="w-20 h-20 rounded-3xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto mb-5 text-[#5D5FEF]">
+            /* Non-image / Document Preview Card */
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-12 shadow-2xl max-w-md w-full text-center">
+              <div className="w-20 h-20 rounded-3xl bg-[#5D5FEF]/10 border border-[#5D5FEF]/20 flex items-center justify-center mx-auto mb-5 text-[#5D5FEF]">
                 <FileText className="w-10 h-10" />
               </div>
-              <h3 className="font-bold text-slate-900 text-lg mb-1 truncate" title={file.name}>
+              <h3 className="font-bold text-white text-lg mb-1 truncate" title={file.name}>
                 {file.name}
               </h3>
-              <p className="text-xs text-slate-500 mb-6">
-                Format: <span className="font-semibold uppercase">{file.type}</span> • Size: {file.size}
+              <p className="text-xs text-slate-400 mb-6">
+                Type: <span className="font-semibold uppercase text-slate-300">{file.type}</span> • Size: {file.size}
               </p>
 
-              <div className="grid grid-cols-2 gap-3 text-left mb-6 p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs">
-                <div className="flex items-center gap-2 text-slate-600">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              <div className="grid grid-cols-2 gap-3 text-left mb-6 p-3 bg-slate-800/60 rounded-2xl border border-slate-800 text-xs">
+                <div className="flex items-center gap-2 text-slate-300">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span>AES-256 Encrypted</span>
                 </div>
-                <div className="flex items-center gap-2 text-slate-600">
+                <div className="flex items-center gap-2 text-slate-300">
                   <HardDrive className="w-4 h-4 text-[#5D5FEF] shrink-0" />
-                  <span>MinIO S3 Storage</span>
+                  <span>MinIO Bucket</span>
                 </div>
-                <div className="flex items-center gap-2 text-slate-600 col-span-2">
+                <div className="flex items-center gap-2 text-slate-300 col-span-2">
                   <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span>Last Modified: {file.updatedTime}</span>
+                  <span>Modified: {file.updatedTime}</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => onDownload(file.id, file.name)}
-                  className="flex-1 py-3 px-4 bg-[#5D5FEF] hover:bg-[#4F46E5] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+                  className="flex-1 py-3 px-4 bg-[#5D5FEF] hover:bg-[#4F46E5] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download to View</span>
+                  <span>Download File</span>
                 </button>
                 {downloadUrl && (
                   <button
                     onClick={() => window.open(downloadUrl, '_blank')}
-                    className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+                    className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition-colors cursor-pointer border border-slate-700"
                     title="Open in new tab"
                   >
                     <ExternalLink className="w-4 h-4" />

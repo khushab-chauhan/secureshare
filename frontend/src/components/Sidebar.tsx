@@ -7,8 +7,7 @@ import {
   Trash2, 
   Plus, 
   Layers,
-  LogOut,
-  Settings
+  LogOut
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { User } from '../api/client';
@@ -123,21 +122,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onNew
         </div>
 
         {/* User Card */}
-        <div className="flex items-center gap-3 px-1">
-          <div className="w-8 h-8 rounded-full bg-[#5D5FEF] flex items-center justify-center text-white text-xs font-bold shrink-0">
+        <div className="flex items-center gap-2.5 p-2 bg-slate-50/80 rounded-xl border border-slate-200/70 hover:bg-slate-100/70 transition-colors">
+          <div className="w-8 h-8 rounded-full bg-[#5D5FEF] flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-2xs">
             {initials}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-slate-800 truncate">{user?.full_name || 'User'}</p>
-            <p className="text-[10px] text-slate-400 truncate">{user?.email}</p>
+            <p className="text-xs font-bold text-slate-800 truncate" title={user?.full_name || 'User'}>
+              {user?.full_name || 'User'}
+            </p>
+            <p className="text-[10px] text-slate-400 truncate" title={user?.email || ''}>
+              {user?.email || ''}
+            </p>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer" title="Settings">
-              <Settings className="w-3.5 h-3.5" />
-            </button>
+          <div className="flex items-center gap-0.5 shrink-0">
             <button
               onClick={onLogout}
-              className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-colors cursor-pointer"
               title="Sign out"
             >
               <LogOut className="w-3.5 h-3.5" />
