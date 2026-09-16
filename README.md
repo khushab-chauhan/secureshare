@@ -95,7 +95,7 @@ secureshare/
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YantraDesignIT01/secureshare.git
+git clone https://github.com/khushab-chauhan/secureshare.git
 cd secureshare
 ```
 
