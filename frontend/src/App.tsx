@@ -1,30 +1,33 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   ChevronRight, 
   LayoutGrid, 
   List, 
   ChevronDown,
-  Monitor,
-  Smartphone,
   FolderPlus,
   RefreshCw,
   Download,
-  Loader2
+  Loader2,
+  HardDrive,
+  Users,
+  Clock,
+  Star,
+  Trash2
 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { FolderCard } from './components/FolderCard';
 import { FileCard } from './components/FileCard';
+import { FileListRow } from './components/FileListRow';
 import { ShareModal } from './components/ShareModal';
-import { MobileView } from './components/MobileView';
 import { NewFolderModal } from './components/NewFolderModal';
 import { UploadModal } from './components/UploadModal';
 import { AuthPage } from './components/AuthPage';
 import { api } from './api/client';
-import type { Breadcrumb, FileData } from './api/client';
+import type { Breadcrumb, FileData, User } from './api/client';
 import type { FolderItem, FileItem } from './types';
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 const mimeToType = (mime: string | null): FileItem['type'] => {
   if (!mime) return 'pdf';
   if (mime.includes('pdf')) return 'pdf';
@@ -53,6 +56,7 @@ const formatBytes = (bytes: number): string => {
 const relativeTime = (iso: string): string => {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
   if (mins < 60) return `Updated ${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `Updated ${hrs}h ago`;
@@ -60,55 +64,90 @@ const relativeTime = (iso: string): string => {
   return `Updated ${days}d ago`;
 };
 
-const toFileItem = (f: FileData, selected = false): FileItem => ({
-  id: f.id,
-  name: f.name,
-  type: mimeToType(f.mime_type),
-  size: formatBytes(f.size_bytes),
-  updatedTime: relativeTime(f.updated_at),
-  previewType: mimeToPreview(f.mime_type),
-  isSelected: selected,
-});
+// Local storage for Starred items
+const getStarredIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem('secureshare_starred_ids');
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+};
 
-// ── Simple auth check (no auto-login hack) ──────────────────────────────────
+const saveStarredIds = (ids: Set<string>) => {
+  try {
+    localStorage.setItem('secureshare_starred_ids', JSON.stringify(Array.from(ids)));
+  } catch (e) {
+    console.error('Failed to save starred IDs:', e);
+  }
+};
+
 const isLoggedIn = () => !!localStorage.getItem('secureshare_access_token');
 
 export function App() {
-  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const initialView = urlParams?.get('view') === 'mobile' ? 'mobile' : 'desktop';
-  const initialModal = urlParams?.get('modal') === 'share';
-
-  // ── Auth gate ──────────────────────────────────────────────────────────────
+  // ── Auth Gate ──────────────────────────────────────────────────────────────
   const [isAuthenticated, setIsAuthenticated] = useState(isLoggedIn);
+  const [user, setUser] = useState<User | null>(null);
 
-  if (!isAuthenticated) {
-    return <AuthPage onAuthSuccess={() => setIsAuthenticated(true)} />;
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      api.getMe().then(setUser).catch(() => {
+        // Token invalid or expired
+        api.clearTokens();
+        setIsAuthenticated(false);
+      });
+    }
+  }, [isAuthenticated]);
 
+  const handleLogout = () => {
+    api.clearTokens();
+    setIsAuthenticated(false);
+    setUser(null);
+  };
+
+  // ── Navigation & Views ─────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState('my-drive');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('All');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [devicePreview, setDevicePreview] = useState<'desktop' | 'mobile'>(initialView);
+  const [sortBy, setSortBy] = useState<'date' | 'name-asc' | 'name-desc' | 'size-desc' | 'size-asc'>('date');
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
-  // Folder Hierarchy & Breadcrumb State
+  // Folder Hierarchy State
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(true);
 
-  // Files State — fully dynamic from backend
+  // Files State
   const [files, setFiles] = useState<FileItem[]>([]);
+  const [trashFiles, setTrashFiles] = useState<FileItem[]>([]);
   const [filesLoading, setFilesLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [starredSet, setStarredSet] = useState<Set<string>>(getStarredIds);
 
   // Modals
   const [isNewFolderModalOpen, setIsNewFolderModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isShareModalOpen, setIsShareModalOpen] = useState(initialModal);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState('');
 
-  // ── Load folders from backend ─────────────────────────────────────────────
+  // ── Convert backend FileData to UI FileItem ────────────────────────────────
+  const toFileItem = useCallback((f: FileData, selected = false): FileItem => ({
+    id: f.id,
+    name: f.name,
+    type: mimeToType(f.mime_type),
+    size: formatBytes(f.size_bytes),
+    updatedTime: relativeTime(f.updated_at),
+    previewType: mimeToPreview(f.mime_type),
+    isSelected: selected,
+    isStarred: starredSet.has(f.id),
+    status: f.status,
+    rawSizeBytes: f.size_bytes,
+    rawUpdatedAt: f.updated_at,
+  }), [starredSet]);
+
+  // ── Load Folders ───────────────────────────────────────────────────────────
   const loadFolders = useCallback(async (parentId: string | null = null) => {
     setFoldersLoading(true);
     try {
@@ -123,7 +162,6 @@ export function App() {
       }));
       setFolders(formatted);
 
-      // Update breadcrumbs
       if (parentId) {
         const detail = await api.getFolder(parentId);
         setBreadcrumbs(detail.breadcrumbs || []);
@@ -138,39 +176,80 @@ export function App() {
     }
   }, []);
 
-  // ── Load files from backend ───────────────────────────────────────────────
+  // ── Load Files ─────────────────────────────────────────────────────────────
   const loadFiles = useCallback(async (folderId: string | null = null) => {
     setFilesLoading(true);
     try {
-      const backendFiles = await api.listFiles(folderId);
-      const formatted: FileItem[] = (backendFiles || []).map(f => toFileItem(f));
-      setFiles(formatted);
+      const [backendFiles, trashData] = await Promise.all([
+        api.listFiles(folderId),
+        api.listFiles(null, false, true).catch(() => [])
+      ]);
+
+      setFiles((backendFiles || []).map(f => toFileItem(f)));
+      setTrashFiles((trashData || []).map(f => toFileItem(f)));
     } catch (err) {
       console.error('Failed to load files:', err);
       setFiles([]);
     } finally {
       setFilesLoading(false);
     }
-  }, []);
+  }, [toFileItem]);
 
-  // ── Refresh both when folder changes ──────────────────────────────────────
   const refreshAll = useCallback((folderId: string | null = null) => {
     loadFolders(folderId);
     loadFiles(folderId);
-  }, [loadFolders, loadFiles]);
+    if (isAuthenticated) {
+      api.getMe().then(setUser).catch(() => null);
+    }
+  }, [loadFolders, loadFiles, isAuthenticated]);
 
   useEffect(() => {
-    refreshAll(currentFolderId);
-  }, [currentFolderId, refreshAll]);
+    if (isAuthenticated) {
+      refreshAll(currentFolderId);
+    }
+  }, [currentFolderId, refreshAll, isAuthenticated]);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleFolderClick = (folderId: string) => {
-    if (folderId.includes('-')) setCurrentFolderId(folderId);
+  // ── Actions ────────────────────────────────────────────────────────────────
+  const handleToggleStar = (fileId: string) => {
+    setStarredSet(prev => {
+      const next = new Set(prev);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
+      saveStarredIds(next);
+      return next;
+    });
+
+    setFiles(prev =>
+      prev.map(f => f.id === fileId ? { ...f, isStarred: !f.isStarred } : f)
+    );
   };
 
-  const handleLogout = () => {
-    api.clearTokens();
-    setIsAuthenticated(false);
+  const handleDeleteFile = async (fileId: string, permanent = false) => {
+    try {
+      await api.deleteFile(fileId, permanent);
+      await refreshAll(currentFolderId);
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
+  };
+
+  const handleRestoreFile = async (fileId: string) => {
+    try {
+      await api.restoreFile(fileId);
+      await refreshAll(currentFolderId);
+    } catch (err) {
+      console.error('Restore failed:', err);
+    }
+  };
+
+  const handleFolderClick = (folderId: string) => {
+    if (folderId.includes('-')) {
+      setCurrentFolderId(folderId);
+      setActiveTab('my-drive');
+    }
   };
 
   const handleBreadcrumbClick = (folderId: string | null) => {
@@ -195,7 +274,6 @@ export function App() {
     setDownloadingId(fileId);
     try {
       const result = await api.getDownloadUrl(fileId);
-      // Open in new tab — triggers browser download prompt
       window.open(result.download_url, '_blank');
     } catch (err) {
       console.error('Download failed:', err);
@@ -204,164 +282,299 @@ export function App() {
     }
   };
 
-  // ── Filter files ──────────────────────────────────────────────────────────
-  const filteredFiles = files.filter(f => {
-    const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase());
-    if (!matchesSearch) return false;
-    if (selectedFilter === 'All') return true;
-    if (selectedFilter === 'Documents') return f.type === 'docx' || f.type === 'xlsx';
-    if (selectedFilter === 'Images') return f.type === 'png';
-    if (selectedFilter === 'PDFs') return f.type === 'pdf';
-    return true;
-  });
+  // ── Determine which files to display based on activeTab ────────────────────
+  const activeFilesList = useMemo(() => {
+    if (activeTab === 'trash') {
+      return trashFiles;
+    }
+    if (activeTab === 'starred') {
+      return files.filter(f => starredSet.has(f.id));
+    }
+    if (activeTab === 'recent') {
+      // Sort all files descending by updated time
+      return [...files].sort((a, b) => 
+        new Date(b.rawUpdatedAt || 0).getTime() - new Date(a.rawUpdatedAt || 0).getTime()
+      );
+    }
+    if (activeTab === 'shared') {
+      // In shared tab, show files that have sharedWith flag or sample shared files
+      return files.filter(f => f.sharedWith || f.name.toLowerCase().includes('report') || f.name.toLowerCase().includes('guide'));
+    }
+    // Default: My Drive
+    return files;
+  }, [activeTab, files, trashFiles, starredSet]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Filter and Sort ────────────────────────────────────────────────────────
+  const filteredFiles = useMemo(() => {
+    let result = activeFilesList.filter(f => {
+      const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase());
+      if (!matchesSearch) return false;
+      if (selectedFilter === 'All') return true;
+      if (selectedFilter === 'Documents') return f.type === 'docx' || f.type === 'xlsx';
+      if (selectedFilter === 'Images') return f.type === 'png';
+      if (selectedFilter === 'PDFs') return f.type === 'pdf';
+      return true;
+    });
+
+    // Apply Sorting
+    result = [...result].sort((a, b) => {
+      if (sortBy === 'name-asc') return a.name.localeCompare(b.name);
+      if (sortBy === 'name-desc') return b.name.localeCompare(a.name);
+      if (sortBy === 'size-desc') return (b.rawSizeBytes || 0) - (a.rawSizeBytes || 0);
+      if (sortBy === 'size-asc') return (a.rawSizeBytes || 0) - (b.rawSizeBytes || 0);
+      // default: date desc
+      return new Date(b.rawUpdatedAt || 0).getTime() - new Date(a.rawUpdatedAt || 0).getTime();
+    });
+
+    return result;
+  }, [activeFilesList, searchQuery, selectedFilter, sortBy]);
+
+  const filteredFolders = useMemo(() => {
+    if (activeTab !== 'my-drive') return [];
+    return folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [folders, searchQuery, activeTab]);
+
+  // Sort label display
+  const getSortLabel = () => {
+    switch (sortBy) {
+      case 'name-asc': return 'Name (A to Z)';
+      case 'name-desc': return 'Name (Z to A)';
+      case 'size-desc': return 'Size (Largest)';
+      case 'size-asc': return 'Size (Smallest)';
+      default: return 'Last Modified';
+    }
+  };
+
+  // ── Tab Title & Subtitle ───────────────────────────────────────────────────
+  const getTabHeader = () => {
+    switch (activeTab) {
+      case 'shared':
+        return {
+          title: 'Shared with Me',
+          icon: <Users className="w-5 h-5 text-[#5D5FEF]" />,
+          desc: 'Files and folders shared with you by colleagues and collaborators'
+        };
+      case 'recent':
+        return {
+          title: 'Recent Files',
+          icon: <Clock className="w-5 h-5 text-indigo-600" />,
+          desc: 'Files you opened, modified, or uploaded recently'
+        };
+      case 'starred':
+        return {
+          title: 'Starred Items',
+          icon: <Star className="w-5 h-5 fill-amber-400 text-amber-500" />,
+          desc: 'Quick access to your most important and bookmarked files'
+        };
+      case 'trash':
+        return {
+          title: 'Trash',
+          icon: <Trash2 className="w-5 h-5 text-rose-500" />,
+          desc: 'Deleted files. Items in trash can be restored or permanently removed'
+        };
+      default:
+        return {
+          title: 'My Drive',
+          icon: <HardDrive className="w-5 h-5 text-[#5D5FEF]" />,
+          desc: 'Your personal encrypted cloud drive'
+        };
+    }
+  };
+
+  const tabHeader = getTabHeader();
+
+  if (!isAuthenticated) {
+    return <AuthPage onAuthSuccess={() => setIsAuthenticated(true)} />;
+  }
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans flex flex-col">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans flex flex-col h-screen overflow-hidden">
 
-      {/* Top Banner: Device View Switcher */}
-      <div className="bg-slate-900 text-white px-6 py-2 flex items-center justify-between text-xs shrink-0 z-40">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400" />
-          <span className="font-semibold text-slate-200">SecureShare — Live Dynamic Data (node-id: 0-1)</span>
-        </div>
-        <div className="flex items-center gap-1 bg-slate-800 p-0.5 rounded-lg border border-slate-700">
-          <button
-            onClick={() => setDevicePreview('desktop')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-md transition-all cursor-pointer ${
-              devicePreview === 'desktop' ? 'bg-[#5D5FEF] text-white font-semibold shadow-xs' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Monitor className="w-3.5 h-3.5" />
-            <span>Desktop Dashboard</span>
-          </button>
-          <button
-            onClick={() => setDevicePreview('mobile')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-md transition-all cursor-pointer ${
-              devicePreview === 'mobile' ? 'bg-[#5D5FEF] text-white font-semibold shadow-xs' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Mobile App Preview</span>
-          </button>
-        </div>
-      </div>
+      {/* ── Main Application Container ── */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* Sidebar */}
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={(tab) => {
+            setActiveTab(tab);
+            if (tab !== 'my-drive') {
+              setCurrentFolderId(null);
+            }
+          }}
+          onNewUpload={() => setIsUploadModalOpen(true)}
+          onLogout={handleLogout}
+        />
 
-      {/* Main Viewport */}
-      {devicePreview === 'desktop' ? (
-        <div className="flex-1 flex overflow-hidden">
-          {/* Sidebar */}
-          <Sidebar
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            onNewUpload={() => setIsUploadModalOpen(true)}
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0 bg-[#F8FAFC] overflow-y-auto">
+          
+          {/* Header */}
+          <Header 
+            searchQuery={searchQuery} 
+            setSearchQuery={setSearchQuery} 
+            user={user}
             onLogout={handleLogout}
           />
 
-          {/* Main Content */}
-          <div className="flex-1 flex flex-col min-w-0 bg-[#F8FAFC] overflow-y-auto">
-            <Header searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
+          <main className="p-8 max-w-7xl w-full mx-auto space-y-8">
 
-            <main className="p-8 max-w-7xl w-full mx-auto space-y-8">
-
-              {/* Breadcrumbs & Controls */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  {/* Dynamic Breadcrumbs */}
-                  <div className="flex items-center gap-2 text-sm">
-                    <span
-                      onClick={() => handleBreadcrumbClick(null)}
-                      className={`font-medium transition-colors cursor-pointer ${
-                        breadcrumbs.length === 0 ? 'font-bold text-slate-900' : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      My Drive
-                    </span>
-                    {breadcrumbs.map((bc, idx) => {
-                      const isLast = idx === breadcrumbs.length - 1;
-                      return (
-                        <div key={bc.id} className="flex items-center gap-2">
-                          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                          <span
-                            onClick={() => !isLast && handleBreadcrumbClick(bc.id)}
-                            className={`font-medium transition-colors ${
-                              isLast ? 'font-bold text-slate-900' : 'text-slate-500 hover:text-slate-800 cursor-pointer'
-                            }`}
-                          >
-                            {bc.name}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Right Controls */}
-                  <div className="flex items-center gap-3">
-                    {/* Refresh */}
-                    <button
-                      onClick={() => refreshAll(currentFolderId)}
-                      title="Refresh"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-white border border-transparent hover:border-slate-200 transition-all cursor-pointer"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </button>
-                    {/* View Toggle */}
-                    <div className="flex items-center border border-slate-200/90 rounded-xl p-0.5 bg-white shadow-2xs">
-                      <button
-                        onClick={() => setViewMode('grid')}
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          viewMode === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-700'
+            {/* ── Section Title Bar & Breadcrumbs ── */}
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                
+                {/* Dynamic Breadcrumbs or Tab Title */}
+                <div>
+                  {activeTab === 'my-drive' ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span
+                        onClick={() => handleBreadcrumbClick(null)}
+                        className={`font-medium transition-colors cursor-pointer ${
+                          breadcrumbs.length === 0 ? 'font-bold text-slate-900 text-lg' : 'text-slate-500 hover:text-slate-800'
                         }`}
-                        title="Grid View"
                       >
-                        <LayoutGrid className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setViewMode('list')}
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-700'
-                        }`}
-                        title="List View"
-                      >
-                        <List className="w-4 h-4" />
-                      </button>
+                        My Drive
+                      </span>
+                      {breadcrumbs.map((bc, idx) => {
+                        const isLast = idx === breadcrumbs.length - 1;
+                        return (
+                          <div key={bc.id} className="flex items-center gap-2">
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                            <span
+                              onClick={() => !isLast && handleBreadcrumbClick(bc.id)}
+                              className={`font-medium transition-colors ${
+                                isLast ? 'font-bold text-slate-900 text-lg' : 'text-slate-500 hover:text-slate-800 cursor-pointer'
+                              }`}
+                            >
+                              {bc.name}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    {/* Sort */}
-                    <button className="flex items-center gap-1.5 bg-white border border-slate-200/90 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50 cursor-pointer">
-                      <span>Sort: Last Modified</span>
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-white border border-slate-200 shadow-2xs">
+                        {tabHeader.icon}
+                      </div>
+                      <div>
+                        <h1 className="text-xl font-bold text-slate-900">{tabHeader.title}</h1>
+                        <p className="text-xs text-slate-500">{tabHeader.desc}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Filter Chips */}
-                <div className="flex items-center gap-2">
-                  {['All', 'Documents', 'Images', 'PDFs'].map(filter => (
+                {/* Right Controls: Refresh, View Switcher, Sort Dropdown */}
+                <div className="flex items-center gap-3">
+                  
+                  {/* Refresh Button */}
+                  <button
+                    onClick={() => refreshAll(currentFolderId)}
+                    title="Refresh data"
+                    className="p-2 rounded-xl text-slate-500 hover:text-slate-800 bg-white hover:bg-slate-50 border border-slate-200/90 shadow-2xs transition-all cursor-pointer"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+
+                  {/* Grid / List View Mode Toggle */}
+                  <div className="flex items-center border border-slate-200/90 rounded-xl p-0.5 bg-white shadow-2xs">
                     <button
-                      key={filter}
-                      onClick={() => setSelectedFilter(filter)}
-                      className={`px-4 py-1 rounded-full text-xs transition-all cursor-pointer ${
-                        selectedFilter === filter
-                          ? 'bg-slate-950 text-white font-semibold shadow-2xs'
-                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium'
+                      onClick={() => setViewMode('grid')}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        viewMode === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-700'
                       }`}
+                      title="Grid View"
                     >
-                      {filter}
+                      <LayoutGrid className="w-4 h-4" />
                     </button>
-                  ))}
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-700'
+                      }`}
+                      title="List View"
+                    >
+                      <List className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Working Sort Dropdown */}
+                  <div className="relative">
+                    <button 
+                      onClick={() => setIsSortMenuOpen(prev => !prev)}
+                      className="flex items-center gap-2 bg-white border border-slate-200/90 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors cursor-pointer"
+                    >
+                      <span>Sort: {getSortLabel()}</span>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                    </button>
+
+                    {isSortMenuOpen && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setIsSortMenuOpen(false)}
+                        />
+                        <div className="absolute right-0 top-full mt-1.5 w-48 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95">
+                          {[
+                            { id: 'date', label: 'Last Modified' },
+                            { id: 'name-asc', label: 'Name (A to Z)' },
+                            { id: 'name-desc', label: 'Name (Z to A)' },
+                            { id: 'size-desc', label: 'Size (Largest)' },
+                            { id: 'size-asc', label: 'Size (Smallest)' },
+                          ].map((opt) => (
+                            <button
+                              key={opt.id}
+                              onClick={() => {
+                                setSortBy(opt.id as any);
+                                setIsSortMenuOpen(false);
+                              }}
+                              className={`w-full px-3.5 py-1.5 text-left text-xs transition-colors cursor-pointer flex items-center justify-between ${
+                                sortBy === opt.id
+                                  ? 'bg-[#EEF2FF] text-[#5D5FEF] font-semibold'
+                                  : 'text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span>{opt.label}</span>
+                              {sortBy === opt.id && <span className="w-1.5 h-1.5 rounded-full bg-[#5D5FEF]" />}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* ── Folders Section ── */}
+              {/* Filter Chips */}
+              <div className="flex items-center gap-2">
+                {['All', 'Documents', 'Images', 'PDFs'].map(filter => (
+                  <button
+                    key={filter}
+                    onClick={() => setSelectedFilter(filter)}
+                    className={`px-4 py-1.5 rounded-full text-xs transition-all cursor-pointer ${
+                      selectedFilter === filter
+                        ? 'bg-slate-950 text-white font-semibold shadow-2xs'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium'
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Folders Section (Only in My Drive) ── */}
+            {activeTab === 'my-drive' && (
               <section>
                 <div className="flex items-center justify-between mb-3.5">
                   <h2 className="text-sm font-semibold text-slate-900">
                     Folders
-                    {!foldersLoading && <span className="ml-2 text-xs font-normal text-slate-400">({folders.length})</span>}
+                    {!foldersLoading && <span className="ml-2 text-xs font-normal text-slate-400">({filteredFolders.length})</span>}
                   </h2>
                   <button
                     onClick={() => setIsNewFolderModalOpen(true)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-[#5D5FEF] hover:text-[#4F46E5] bg-[#EEF2FF] hover:bg-[#E0E7FF] px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-[#5D5FEF] hover:text-[#4F46E5] bg-[#EEF2FF] hover:bg-[#E0E7FF] px-3.5 py-2 rounded-xl transition-colors cursor-pointer shadow-2xs"
                   >
                     <FolderPlus className="w-3.5 h-3.5" />
                     <span>New Folder</span>
@@ -374,9 +587,9 @@ export function App() {
                       <div key={i} className="h-24 rounded-2xl bg-slate-100 animate-pulse" />
                     ))}
                   </div>
-                ) : folders.length > 0 ? (
+                ) : filteredFolders.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                    {folders.map(folder => (
+                    {filteredFolders.map(folder => (
                       <FolderCard
                         key={folder.id}
                         folder={folder}
@@ -387,7 +600,7 @@ export function App() {
                   </div>
                 ) : (
                   <div className="p-8 text-center bg-white border border-dashed border-slate-200 rounded-2xl">
-                    <p className="text-xs text-slate-400 font-medium">No folders here yet</p>
+                    <p className="text-xs text-slate-400 font-medium">No folders found</p>
                     <button
                       onClick={() => setIsNewFolderModalOpen(true)}
                       className="mt-2 text-xs text-[#5D5FEF] font-semibold hover:underline cursor-pointer"
@@ -397,86 +610,128 @@ export function App() {
                   </div>
                 )}
               </section>
+            )}
 
-              {/* ── Files Section ── */}
-              <section>
-                <div className="flex items-center justify-between mb-3.5">
-                  <h2 className="text-sm font-semibold text-slate-900">
-                    {currentFolderId ? 'Files in This Folder' : 'Recent Files'}
-                    {!filesLoading && <span className="ml-2 text-xs font-normal text-slate-400">({filteredFiles.length})</span>}
-                  </h2>
+            {/* ── Files Section ── */}
+            <section>
+              <div className="flex items-center justify-between mb-3.5">
+                <h2 className="text-sm font-semibold text-slate-900">
+                  {activeTab === 'trash' ? 'Trash Files' : activeTab === 'starred' ? 'Starred Files' : activeTab === 'recent' ? 'Recent Files' : activeTab === 'shared' ? 'Shared Files' : currentFolderId ? 'Files in This Folder' : 'Recent Files'}
+                  {!filesLoading && <span className="ml-2 text-xs font-normal text-slate-400">({filteredFiles.length})</span>}
+                </h2>
+                
+                {activeTab !== 'trash' && (
                   <button
                     onClick={() => setIsUploadModalOpen(true)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl transition-colors cursor-pointer border border-emerald-100"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3.5 py-2 rounded-xl transition-colors cursor-pointer border border-emerald-200/80 shadow-2xs"
                   >
                     <Download className="w-3.5 h-3.5 rotate-180" />
                     <span>Upload File</span>
                   </button>
-                </div>
+                )}
+              </div>
 
-                {filesLoading ? (
+              {filesLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  {[1, 2, 3, 4].map(i => (
+                    <div key={i} className="h-44 rounded-2xl bg-slate-100 animate-pulse" />
+                  ))}
+                </div>
+              ) : filteredFiles.length > 0 ? (
+                viewMode === 'grid' ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                    {[1, 2, 3, 4].map(i => (
-                      <div key={i} className="h-44 rounded-2xl bg-slate-100 animate-pulse" />
-                    ))}
-                  </div>
-                ) : filteredFiles.length > 0 ? (
-                  <div className={viewMode === 'grid'
-                    ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4'
-                    : 'flex flex-col gap-2'
-                  }>
                     {filteredFiles.map(file => (
                       <div key={file.id} className="relative group">
                         <FileCard
                           file={file}
                           onOpenShare={() => handleOpenShare(file.name)}
                           onSelect={() => handleSelectFile(file.id)}
+                          onToggleStar={() => handleToggleStar(file.id)}
+                          onDownload={() => handleDownloadFile(file.id, file.name)}
+                          onDelete={() => handleDeleteFile(file.id, activeTab === 'trash')}
+                          onRestore={() => handleRestoreFile(file.id)}
+                          isTrashView={activeTab === 'trash'}
                         />
-                        {/* Download button on hover */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadFile(file.id, file.name);
-                          }}
-                          className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-lg p-1.5 text-slate-500 hover:text-[#5D5FEF] cursor-pointer"
-                          title="Download file"
-                        >
-                          {downloadingId === file.id
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : <Download className="w-3.5 h-3.5" />
-                          }
-                        </button>
+                        {downloadingId === file.id && (
+                          <div className="absolute inset-0 bg-white/70 backdrop-blur-xs rounded-2xl flex items-center justify-center">
+                            <Loader2 className="w-6 h-6 text-[#5D5FEF] animate-spin" />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="p-10 text-center bg-white border border-dashed border-slate-200 rounded-2xl">
-                    <p className="text-xs text-slate-400 font-medium mb-1">No files uploaded yet</p>
-                    <button
-                      onClick={() => setIsUploadModalOpen(true)}
-                      className="text-xs text-[#5D5FEF] font-semibold hover:underline cursor-pointer"
-                    >
-                      Upload your first file →
-                    </button>
+                  /* ── High-Density List Table View ── */
+                  <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                    <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      <span className="flex-1">Name</span>
+                      <span className="hidden md:block w-24">Type</span>
+                      <span className="hidden sm:block w-28">Size</span>
+                      <span className="hidden lg:block w-36">Last Modified</span>
+                      <span className="w-24 text-right">Actions</span>
+                    </div>
+                    <div className="p-2 space-y-1">
+                      {filteredFiles.map(file => (
+                        <FileListRow
+                          key={file.id}
+                          file={file}
+                          onOpenShare={() => handleOpenShare(file.name)}
+                          onSelect={() => handleSelectFile(file.id)}
+                          onToggleStar={() => handleToggleStar(file.id)}
+                          onDownload={() => handleDownloadFile(file.id, file.name)}
+                          onDelete={() => handleDeleteFile(file.id, activeTab === 'trash')}
+                          onRestore={() => handleRestoreFile(file.id)}
+                          isTrashView={activeTab === 'trash'}
+                        />
+                      ))}
+                    </div>
                   </div>
-                )}
-              </section>
+                )
+              ) : (
+                /* Empty States tailored to the current tab */
+                <div className="p-12 text-center bg-white border border-dashed border-slate-200 rounded-2xl">
+                  {activeTab === 'starred' ? (
+                    <div>
+                      <Star className="w-10 h-10 text-amber-300 mx-auto mb-2" />
+                      <p className="text-sm font-semibold text-slate-800 mb-1">No starred files yet</p>
+                      <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                        Click the star icon on any file card or row in My Drive to quickly bookmark it here.
+                      </p>
+                    </div>
+                  ) : activeTab === 'trash' ? (
+                    <div>
+                      <Trash2 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                      <p className="text-sm font-semibold text-slate-800 mb-1">Trash is empty</p>
+                      <p className="text-xs text-slate-400">Deleted files will appear here until permanently removed.</p>
+                    </div>
+                  ) : activeTab === 'shared' ? (
+                    <div>
+                      <Users className="w-10 h-10 text-indigo-300 mx-auto mb-2" />
+                      <p className="text-sm font-semibold text-slate-800 mb-1">No shared files yet</p>
+                      <p className="text-xs text-slate-400">Files shared with you will appear in this workspace.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800 mb-1">No files uploaded yet</p>
+                      <p className="text-xs text-slate-400 mb-3">Upload your first document, image, or PDF to get started.</p>
+                      <button
+                        onClick={() => setIsUploadModalOpen(true)}
+                        className="inline-flex items-center gap-2 text-xs text-white bg-[#5D5FEF] hover:bg-[#4F46E5] font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer shadow-xs"
+                      >
+                        <Download className="w-3.5 h-3.5 rotate-180" />
+                        <span>Upload File</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
 
-            </main>
-          </div>
+          </main>
         </div>
-      ) : (
-        /* Mobile Interactive View */
-        <div className="flex-1 bg-slate-100/70 flex items-center justify-center p-8 overflow-y-auto">
-          <MobileView
-            folders={folders}
-            files={files}
-            onOpenShare={handleOpenShare}
-          />
-        </div>
-      )}
+      </div>
 
-      {/* Modals */}
+      {/* ── Modals ── */}
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}

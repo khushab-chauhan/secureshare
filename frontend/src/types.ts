@@ -16,6 +16,11 @@ export interface FileItem {
   previewType: 'pdf' | 'image' | 'docx' | 'sheet';
   imageUrl?: string;
   isSelected?: boolean;
+  isStarred?: boolean;
+  status?: string;
+  rawSizeBytes?: number;
+  rawUpdatedAt?: string;
+  sharedWith?: string;
 }
 
 export interface SharedUser {

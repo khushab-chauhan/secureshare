@@ -162,8 +162,18 @@ class FileService:
         owner_id: uuid.UUID,
         folder_id: Optional[uuid.UUID] = None,
         include_trash: bool = False,
+        only_trash: bool = False,
     ) -> List[FileRead]:
-        """List active files for the current user, filtered by folder."""
+        """List files for the current user, filtered by folder or trash status."""
+        if only_trash:
+            stmt = select(File).where(
+                File.owner_id == owner_id,
+                File.status == FileStatus.trash,
+            ).order_by(File.updated_at.desc())
+            result = await db.execute(stmt)
+            files = result.scalars().all()
+            return [FileRead.model_validate(f) for f in files]
+
         statuses = [FileStatus.active, FileStatus.processing]
         if include_trash:
             statuses.append(FileStatus.trash)
@@ -172,7 +182,7 @@ class FileService:
             File.owner_id == owner_id,
             File.status.in_(statuses),
             File.folder_id == folder_id,
-        )
+        ).order_by(File.updated_at.desc())
         result = await db.execute(stmt)
         files = result.scalars().all()
         return [FileRead.model_validate(f) for f in files]
@@ -224,4 +234,50 @@ class FileService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
         file.status = FileStatus.trash
+        await db.commit()
+
+    @staticmethod
+    async def restore_file(
+        db: AsyncSession,
+        owner_id: uuid.UUID,
+        file_id: uuid.UUID,
+    ) -> FileRead:
+        """Restore a soft-deleted file from trash back to active."""
+        result = await db.execute(
+            select(File).where(File.id == file_id, File.owner_id == owner_id)
+        )
+        file: Optional[File] = result.scalar_one_or_none()
+
+        if not file:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+        file.status = FileStatus.active
+        await db.commit()
+        await db.refresh(file)
+        return FileRead.model_validate(file)
+
+    @staticmethod
+    async def permanent_delete_file(
+        db: AsyncSession,
+        owner_id: uuid.UUID,
+        file_id: uuid.UUID,
+    ) -> None:
+        """Permanently delete a file from database and update quota."""
+        result = await db.execute(
+            select(File).where(File.id == file_id, File.owner_id == owner_id)
+        )
+        file: Optional[File] = result.scalar_one_or_none()
+
+        if not file:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+        # Reduce storage usage
+        if file.size_bytes:
+            await db.execute(
+                update(User)
+                .where(User.id == owner_id)
+                .values(storage_used_bytes=User.storage_used_bytes - file.size_bytes)
+            )
+
+        await db.delete(file)
         await db.commit()

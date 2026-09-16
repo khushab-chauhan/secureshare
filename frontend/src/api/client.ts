@@ -157,8 +157,12 @@ class ApiClient {
     });
   }
 
-  async listFiles(folderId?: string | null): Promise<FileData[]> {
-    const query = folderId ? `?folder_id=${folderId}` : '';
+  async listFiles(folderId?: string | null, includeTrash = false, onlyTrash = false): Promise<FileData[]> {
+    const params = new URLSearchParams();
+    if (folderId) params.append('folder_id', folderId);
+    if (includeTrash) params.append('include_trash', 'true');
+    if (onlyTrash) params.append('only_trash', 'true');
+    const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<FileData[]>(`/files/${query}`);
   }
 
@@ -166,8 +170,13 @@ class ApiClient {
     return this.request(`/files/${fileId}/download-url`);
   }
 
-  async deleteFile(fileId: string): Promise<void> {
-    await this.request(`/files/${fileId}`, { method: 'DELETE' });
+  async deleteFile(fileId: string, permanent = false): Promise<void> {
+    const query = permanent ? '?permanent=true' : '';
+    await this.request(`/files/${fileId}${query}`, { method: 'DELETE' });
+  }
+
+  async restoreFile(fileId: string): Promise<FileData> {
+    return this.request<FileData>(`/files/${fileId}/restore`, { method: 'POST' });
   }
 }
 

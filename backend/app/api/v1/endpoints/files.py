@@ -64,9 +64,10 @@ async def list_files(
     db: Annotated[AsyncSession, Depends(get_db)],
     folder_id: Optional[uuid.UUID] = Query(None, description="Filter by folder. None = root level files."),
     include_trash: bool = Query(False),
+    only_trash: bool = Query(False, description="Filter only files currently in trash"),
 ):
-    """Returns all active files owned by the user, optionally filtered by folder."""
-    return await FileService.list_files(db, current_user.id, folder_id, include_trash)
+    """Returns files owned by the user, optionally filtered by folder or trash status."""
+    return await FileService.list_files(db, current_user.id, folder_id, include_trash, only_trash)
 
 
 @router.get(
@@ -83,16 +84,35 @@ async def get_download_url(
     return await FileService.get_download_url(db, current_user.id, file_id)
 
 
+@router.post(
+    "/{file_id}/restore",
+    response_model=FileRead,
+    summary="Restore a file from Trash back to active",
+)
+async def restore_file(
+    file_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Restores a soft-deleted file from trash back to active."""
+    return await FileService.restore_file(db, current_user.id, file_id)
+
+
 @router.delete(
     "/{file_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Soft-delete a file (move to Trash)",
+    summary="Delete a file (move to Trash, or permanently delete)",
 )
 async def delete_file(
     file_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    permanent: bool = Query(False, description="If true, permanently remove file and reclaim quota"),
 ):
-    """Moves the file to Trash. Data is not immediately removed from S3."""
-    await FileService.soft_delete_file(db, current_user.id, file_id)
+    """Moves the file to Trash (default) or permanently removes it."""
+    if permanent:
+        await FileService.permanent_delete_file(db, current_user.id, file_id)
+    else:
+        await FileService.soft_delete_file(db, current_user.id, file_id)
     return None
+
