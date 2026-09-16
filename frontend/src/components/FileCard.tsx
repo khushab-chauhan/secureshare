@@ -6,7 +6,9 @@ import {
   Share2, 
   Trash2, 
   RotateCcw,
-  FileText
+  FileText,
+  Eye,
+  Edit2
 } from 'lucide-react';
 import type { FileItem } from '../types';
 
@@ -18,6 +20,8 @@ interface FileCardProps {
   onDownload?: () => void;
   onDelete?: () => void;
   onRestore?: () => void;
+  onPreview?: () => void;
+  onRename?: () => void;
   isTrashView?: boolean;
 }
 
@@ -29,6 +33,8 @@ export const FileCard: React.FC<FileCardProps> = ({
   onDownload,
   onDelete,
   onRestore,
+  onPreview,
+  onRename,
   isTrashView = false
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -58,7 +64,15 @@ export const FileCard: React.FC<FileCardProps> = ({
       }`}
     >
       {/* Thumbnail Preview Area */}
-      <div className="mb-3 overflow-hidden rounded-xl relative">
+      <div 
+        onClick={(e) => {
+          if (onPreview) {
+            e.stopPropagation();
+            onPreview();
+          }
+        }}
+        className="mb-3 overflow-hidden rounded-xl relative group/thumb"
+      >
         {file.previewType === 'pdf' && (
           <div className="bg-red-50/80 h-28 rounded-xl flex items-center justify-center font-bold text-red-500 text-lg tracking-wider">
             PDF
@@ -172,6 +186,32 @@ export const FileCard: React.FC<FileCardProps> = ({
                 <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95">
                   {!isTrashView ? (
                     <>
+                      {onPreview && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsMenuOpen(false);
+                            onPreview();
+                          }}
+                          className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Preview</span>
+                        </button>
+                      )}
+                      {onRename && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsMenuOpen(false);
+                            onRename();
+                          }}
+                          className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Rename</span>
+                        </button>
+                      )}
                       {onDownload && (
                         <button
                           onClick={(e) => {

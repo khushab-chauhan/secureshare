@@ -281,3 +281,30 @@ class FileService:
 
         await db.delete(file)
         await db.commit()
+
+    @staticmethod
+    async def update_file(
+        db: AsyncSession,
+        owner_id: uuid.UUID,
+        file_id: uuid.UUID,
+        name: Optional[str] = None,
+        folder_id: Optional[uuid.UUID] = None,
+    ) -> FileRead:
+        """Rename a file or move it to another folder."""
+        result = await db.execute(
+            select(File).where(File.id == file_id, File.owner_id == owner_id)
+        )
+        file: Optional[File] = result.scalar_one_or_none()
+
+        if not file:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+        if name is not None and name.strip():
+            file.name = name.strip()
+        if folder_id is not None:
+            file.folder_id = folder_id
+
+        await db.commit()
+        await db.refresh(file)
+        return FileRead.model_validate(file)
+

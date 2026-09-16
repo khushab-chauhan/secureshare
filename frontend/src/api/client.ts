@@ -178,6 +178,20 @@ class ApiClient {
   async restoreFile(fileId: string): Promise<FileData> {
     return this.request<FileData>(`/files/${fileId}/restore`, { method: 'POST' });
   }
+
+  async renameFile(fileId: string, newName: string): Promise<FileData> {
+    return this.request<FileData>(`/files/${fileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: newName }),
+    });
+  }
+
+  async moveFile(fileId: string, folderId: string | null): Promise<FileData> {
+    return this.request<FileData>(`/files/${fileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ folder_id: folderId }),
+    });
+  }
 }
 
 export interface FileData {

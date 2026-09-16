@@ -10,6 +10,7 @@ from app.schemas.file import (
     CompleteUploadRequest,
     FileDownloadResponse,
     FileRead,
+    FileUpdateRequest,
     PresignedUploadRequest,
     PresignedUploadResponse,
 )
@@ -115,4 +116,26 @@ async def delete_file(
     else:
         await FileService.soft_delete_file(db, current_user.id, file_id)
     return None
+
+
+@router.patch(
+    "/{file_id}",
+    response_model=FileRead,
+    summary="Update file name or move to folder",
+)
+async def update_file(
+    file_id: uuid.UUID,
+    payload: FileUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update file name or move file to a different folder."""
+    return await FileService.update_file(
+        db,
+        current_user.id,
+        file_id,
+        name=payload.name,
+        folder_id=payload.folder_id,
+    )
+
 

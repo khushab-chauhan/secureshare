@@ -99,3 +99,10 @@ class FileDownloadResponse(BaseModel):
     file_name: str
     download_url: str
     expires_in_seconds: int
+
+
+class FileUpdateRequest(BaseModel):
+    """Request body to rename or move a file."""
+    name: Optional[str] = None
+    folder_id: Optional[uuid.UUID] = None
+

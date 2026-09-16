@@ -22,6 +22,8 @@ import { FileListRow } from './components/FileListRow';
 import { ShareModal } from './components/ShareModal';
 import { NewFolderModal } from './components/NewFolderModal';
 import { UploadModal } from './components/UploadModal';
+import { FilePreviewModal } from './components/FilePreviewModal';
+import { RenameModal } from './components/RenameModal';
 import { AuthPage } from './components/AuthPage';
 import { api } from './api/client';
 import type { Breadcrumb, FileData, User } from './api/client';
@@ -130,7 +132,12 @@ export function App() {
   const [isNewFolderModalOpen, setIsNewFolderModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareFileItem, setShareFileItem] = useState<FileItem | null>(null);
   const [selectedFileName, setSelectedFileName] = useState('');
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [renameFileItem, setRenameFileItem] = useState<FileItem | null>(null);
 
   // ── Convert backend FileData to UI FileItem ────────────────────────────────
   const toFileItem = useCallback((f: FileData, selected = false): FileItem => ({
@@ -261,9 +268,33 @@ export function App() {
     await loadFolders(currentFolderId);
   };
 
-  const handleOpenShare = (fileName?: string) => {
-    if (fileName) setSelectedFileName(fileName);
+  const handleOpenShare = (fileOrName?: FileItem | string) => {
+    if (typeof fileOrName === 'string') {
+      setSelectedFileName(fileOrName);
+      setShareFileItem(null);
+    } else if (fileOrName) {
+      setSelectedFileName(fileOrName.name);
+      setShareFileItem(fileOrName);
+    }
     setIsShareModalOpen(true);
+  };
+
+  const handleOpenPreview = (file: FileItem) => {
+    setPreviewFile(file);
+    setIsPreviewModalOpen(true);
+  };
+
+  const handleOpenRename = (file: FileItem) => {
+    setRenameFileItem(file);
+    setIsRenameModalOpen(true);
+  };
+
+  const handleRenameFile = async (fileId: string, newName: string) => {
+    await api.renameFile(fileId, newName);
+    await refreshAll(currentFolderId);
+    if (previewFile && previewFile.id === fileId) {
+      setPreviewFile(prev => prev ? { ...prev, name: newName } : null);
+    }
   };
 
   const handleSelectFile = (fileId: string) => {
@@ -644,12 +675,14 @@ export function App() {
                       <div key={file.id} className="relative group">
                         <FileCard
                           file={file}
-                          onOpenShare={() => handleOpenShare(file.name)}
+                          onOpenShare={() => handleOpenShare(file)}
                           onSelect={() => handleSelectFile(file.id)}
                           onToggleStar={() => handleToggleStar(file.id)}
                           onDownload={() => handleDownloadFile(file.id, file.name)}
                           onDelete={() => handleDeleteFile(file.id, activeTab === 'trash')}
                           onRestore={() => handleRestoreFile(file.id)}
+                          onPreview={() => handleOpenPreview(file)}
+                          onRename={() => handleOpenRename(file)}
                           isTrashView={activeTab === 'trash'}
                         />
                         {downloadingId === file.id && (
@@ -675,12 +708,14 @@ export function App() {
                         <FileListRow
                           key={file.id}
                           file={file}
-                          onOpenShare={() => handleOpenShare(file.name)}
+                          onOpenShare={() => handleOpenShare(file)}
                           onSelect={() => handleSelectFile(file.id)}
                           onToggleStar={() => handleToggleStar(file.id)}
                           onDownload={() => handleDownloadFile(file.id, file.name)}
                           onDelete={() => handleDeleteFile(file.id, activeTab === 'trash')}
                           onRestore={() => handleRestoreFile(file.id)}
+                          onPreview={() => handleOpenPreview(file)}
+                          onRename={() => handleOpenRename(file)}
                           isTrashView={activeTab === 'trash'}
                         />
                       ))}
@@ -735,7 +770,27 @@ export function App() {
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
+        file={shareFileItem}
         fileName={selectedFileName}
+        currentUser={user}
+      />
+
+      <FilePreviewModal
+        isOpen={isPreviewModalOpen}
+        file={previewFile}
+        onClose={() => setIsPreviewModalOpen(false)}
+        onOpenShare={(name) => handleOpenShare(name)}
+        onToggleStar={handleToggleStar}
+        onDownload={handleDownloadFile}
+        onDelete={(id) => handleDeleteFile(id, activeTab === 'trash')}
+        onRename={handleOpenRename}
+      />
+
+      <RenameModal
+        isOpen={isRenameModalOpen}
+        file={renameFileItem}
+        onClose={() => setIsRenameModalOpen(false)}
+        onRename={handleRenameFile}
       />
 
       <UploadModal

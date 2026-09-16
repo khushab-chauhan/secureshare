@@ -8,7 +8,9 @@ import {
   Star,
   FileSpreadsheet,
   FileCode,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Eye,
+  Edit2
 } from 'lucide-react';
 import type { FileItem } from '../types';
 
@@ -20,6 +22,8 @@ interface FileListRowProps {
   onDownload?: () => void;
   onDelete?: () => void;
   onRestore?: () => void;
+  onPreview?: () => void;
+  onRename?: () => void;
   isTrashView?: boolean;
 }
 
@@ -31,6 +35,8 @@ export const FileListRow: React.FC<FileListRowProps> = ({
   onDownload,
   onDelete,
   onRestore,
+  onPreview,
+  onRename,
   isTrashView = false,
 }) => {
   const getFileIcon = () => {
@@ -89,6 +95,32 @@ export const FileListRow: React.FC<FileListRowProps> = ({
       <div className="flex items-center gap-1 shrink-0">
         {!isTrashView ? (
           <>
+            {onPreview && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPreview();
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-[#5D5FEF] hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Preview"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+            )}
+
+            {onRename && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRename();
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Rename"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+            )}
+
             {onToggleStar && (
               <button
                 onClick={(e) => {
