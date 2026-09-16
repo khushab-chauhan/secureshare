@@ -51,7 +51,7 @@ services:
 
   # S3 Compatible Object Storage (Local Development)
   minio:
-    image: minio/minio:RELEASE.2024-03-15T01-07-19Z
+    image: quay.io/minio/minio:latest
     container_name: secureshare_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -66,7 +66,7 @@ services:
 
   # Auto-create the S3 bucket on MinIO boot
   minio_create_bucket:
-    image: minio/mc:RELEASE.2024-03-14T05-18-09Z
+    image: quay.io/minio/mc:latest
     depends_on:
       - minio
     entrypoint: >
