@@ -15,6 +15,7 @@ import { FileCard } from './components/FileCard';
 import { ShareModal } from './components/ShareModal';
 import { MobileView } from './components/MobileView';
 import { NewFolderModal } from './components/NewFolderModal';
+import { UploadModal } from './components/UploadModal';
 import { api } from './api/client';
 import type { Breadcrumb } from './api/client';
 import type { FolderItem, FileItem } from './types';
@@ -43,6 +44,7 @@ export function App() {
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
   const [folders, setFolders] = useState<FolderItem[]>(DEFAULT_FOLDERS);
   const [isNewFolderModalOpen, setIsNewFolderModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   // Share Modal State
   const [isShareModalOpen, setIsShareModalOpen] = useState(initialModal);
@@ -213,7 +215,7 @@ export function App() {
           <Sidebar 
             activeTab={activeTab} 
             setActiveTab={setActiveTab} 
-            onNewUpload={() => handleOpenShare('Upload New File')} 
+            onNewUpload={() => setIsUploadModalOpen(true)} 
           />
 
           {/* Right Main Content */}
@@ -371,6 +373,15 @@ export function App() {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         fileName={selectedFileName}
+      />
+
+      {/* Upload Modal */}
+      <UploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        currentFolderId={currentFolderId}
+        currentFolderName={breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1].name : 'My Drive'}
+        onUploadComplete={() => loadFolders(currentFolderId)}
       />
 
       {/* New Folder Modal */}

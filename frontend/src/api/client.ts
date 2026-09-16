@@ -131,6 +131,55 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // File Upload Endpoints
+  async initiateUpload(payload: {
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+    folder_id?: string | null;
+  }): Promise<{ file_id: string; upload_url: string; s3_key: string; expires_in_seconds: number }> {
+    return this.request('/files/upload-url', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async completeUpload(payload: {
+    file_id: string;
+    etag: string;
+  }): Promise<FileData> {
+    return this.request<FileData>('/files/complete-upload', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async listFiles(folderId?: string | null): Promise<FileData[]> {
+    const query = folderId ? `?folder_id=${folderId}` : '';
+    return this.request<FileData[]>(`/files/${query}`);
+  }
+
+  async getDownloadUrl(fileId: string): Promise<{ file_id: string; file_name: string; download_url: string; expires_in_seconds: number }> {
+    return this.request(`/files/${fileId}/download-url`);
+  }
+
+  async deleteFile(fileId: string): Promise<void> {
+    await this.request(`/files/${fileId}`, { method: 'DELETE' });
+  }
+}
+
+export interface FileData {
+  id: string;
+  name: string;
+  mime_type: string | null;
+  owner_id: string;
+  folder_id: string | null;
+  status: 'pending' | 'active' | 'processing' | 'error' | 'trash';
+  size_bytes: number;
+  current_s3_key: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export const api = new ApiClient();
