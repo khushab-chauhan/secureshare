@@ -19,6 +19,7 @@ import { ShareModal } from './components/ShareModal';
 import { MobileView } from './components/MobileView';
 import { NewFolderModal } from './components/NewFolderModal';
 import { UploadModal } from './components/UploadModal';
+import { AuthPage } from './components/AuthPage';
 import { api } from './api/client';
 import type { Breadcrumb, FileData } from './api/client';
 import type { FolderItem, FileItem } from './types';
@@ -69,26 +70,20 @@ const toFileItem = (f: FileData, selected = false): FileItem => ({
   isSelected: selected,
 });
 
-// ── Auth helper ─────────────────────────────────────────────────────────────
-const ensureAuth = async () => {
-  if (!localStorage.getItem('secureshare_access_token')) {
-    try {
-      await api.login('khushab@secureshare.io', 'Password123!');
-    } catch {
-      try {
-        await api.register('khushab@secureshare.io', 'Password123!', 'Khushab Chauhan');
-        await api.login('khushab@secureshare.io', 'Password123!');
-      } catch (err) {
-        console.error('Auth failed', err);
-      }
-    }
-  }
-};
+// ── Simple auth check (no auto-login hack) ──────────────────────────────────
+const isLoggedIn = () => !!localStorage.getItem('secureshare_access_token');
 
 export function App() {
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const initialView = urlParams?.get('view') === 'mobile' ? 'mobile' : 'desktop';
   const initialModal = urlParams?.get('modal') === 'share';
+
+  // ── Auth gate ──────────────────────────────────────────────────────────────
+  const [isAuthenticated, setIsAuthenticated] = useState(isLoggedIn);
+
+  if (!isAuthenticated) {
+    return <AuthPage onAuthSuccess={() => setIsAuthenticated(true)} />;
+  }
 
   const [activeTab, setActiveTab] = useState('my-drive');
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,7 +112,6 @@ export function App() {
   const loadFolders = useCallback(async (parentId: string | null = null) => {
     setFoldersLoading(true);
     try {
-      await ensureAuth();
       const backendFolders = await api.getFolders(parentId);
       const formatted: FolderItem[] = (backendFolders || []).map(f => ({
         id: f.id,
@@ -148,7 +142,6 @@ export function App() {
   const loadFiles = useCallback(async (folderId: string | null = null) => {
     setFilesLoading(true);
     try {
-      await ensureAuth();
       const backendFiles = await api.listFiles(folderId);
       const formatted: FileItem[] = (backendFiles || []).map(f => toFileItem(f));
       setFiles(formatted);
@@ -173,6 +166,11 @@ export function App() {
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleFolderClick = (folderId: string) => {
     if (folderId.includes('-')) setCurrentFolderId(folderId);
+  };
+
+  const handleLogout = () => {
+    api.clearTokens();
+    setIsAuthenticated(false);
   };
 
   const handleBreadcrumbClick = (folderId: string | null) => {
@@ -257,6 +255,7 @@ export function App() {
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             onNewUpload={() => setIsUploadModalOpen(true)}
+            onLogout={handleLogout}
           />
 
           {/* Main Content */}
