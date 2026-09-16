@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   HardDrive, 
   Users, 
@@ -8,6 +8,8 @@ import {
   Plus, 
   Layers
 } from 'lucide-react';
+import { api } from '../api/client';
+import type { User } from '../api/client';
 
 interface SidebarProps {
   activeTab: string;
@@ -16,6 +18,12 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onNewUpload }) => {
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    api.getMe().then(setUser).catch(() => setUser(null));
+  }, []);
+
   const navItems = [
     { id: 'my-drive', label: 'My Drive', icon: HardDrive },
     { id: 'shared', label: 'Shared with Me', icon: Users },
@@ -23,6 +31,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onNew
     { id: 'starred', label: 'Starred', icon: Star },
     { id: 'trash', label: 'Trash', icon: Trash2 },
   ];
+
+  const storageUsed = user?.storage_used_bytes ?? 0;
+  const storageQuota = user?.storage_quota_bytes ?? 5 * 1024 * 1024 * 1024;
+  const usedPercent = Math.min((storageUsed / storageQuota) * 100, 100);
+
+  const formatGB = (bytes: number) => {
+    const gb = bytes / (1024 * 1024 * 1024);
+    if (gb < 0.01) {
+      const mb = bytes / (1024 * 1024);
+      return `${mb.toFixed(1)} MB`;
+    }
+    return `${gb.toFixed(2)} GB`;
+  };
 
   return (
     <aside className="w-64 bg-white border-r border-slate-200/80 flex flex-col justify-between h-full shrink-0 p-5">
@@ -67,10 +88,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onNew
         </nav>
       </div>
 
-      {/* Storage Status Card */}
+      {/* Dynamic Storage Status Card */}
       <div className="p-4 bg-[#F8FAFC] border border-slate-200/70 rounded-2xl">
         <div className="flex items-center justify-between mb-2.5">
-          <span className="text-xs font-semibold text-slate-800">Storage Status</span>
+          <span className="text-xs font-semibold text-slate-800">Storage Used</span>
           <button className="text-[11px] font-bold text-[#5D5FEF] tracking-wider hover:underline uppercase cursor-pointer">
             Upgrade
           </button>
@@ -78,13 +99,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onNew
         {/* Progress Bar */}
         <div className="w-full bg-slate-200/80 h-1.5 rounded-full overflow-hidden mb-2">
           <div 
-            className="bg-[#5D5FEF] h-full rounded-full transition-all duration-500" 
-            style={{ width: '24%' }}
+            className={`h-full rounded-full transition-all duration-500 ${
+              usedPercent > 85 ? 'bg-rose-500' : usedPercent > 60 ? 'bg-amber-500' : 'bg-[#5D5FEF]'
+            }`}
+            style={{ width: `${Math.max(usedPercent, 1)}%` }}
           />
         </div>
         <p className="text-[11px] text-slate-400 font-medium">
-          1.2 GB of 5.0 GB used
+          {formatGB(storageUsed)} of {formatGB(storageQuota)} used
         </p>
+        {user && (
+          <p className="text-[10px] text-slate-300 mt-0.5 truncate" title={user.email}>
+            {user.full_name || user.email}
+          </p>
+        )}
       </div>
     </aside>
   );

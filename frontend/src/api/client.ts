@@ -4,10 +4,12 @@ export interface User {
   id: string;
   email: string;
   full_name: string;
+  role: string;
   is_active: boolean;
-  is_verified: boolean;
-  storage_used: number;
-  storage_limit: number;
+  storage_used_bytes: number;
+  storage_quota_bytes: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface FolderData {
