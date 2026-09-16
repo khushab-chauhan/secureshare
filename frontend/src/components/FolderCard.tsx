@@ -4,12 +4,16 @@ import type { FolderItem } from '../types';
 
 interface FolderCardProps {
   folder: FolderItem;
+  onClick?: () => void;
   onOpenMenu?: (e: React.MouseEvent) => void;
 }
 
-export const FolderCard: React.FC<FolderCardProps> = ({ folder, onOpenMenu }) => {
+export const FolderCard: React.FC<FolderCardProps> = ({ folder, onClick, onOpenMenu }) => {
   return (
-    <div className="bg-white border border-slate-200/90 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-xs transition-all cursor-pointer group">
+    <div 
+      onClick={onClick}
+      className="bg-white border border-slate-200/90 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-xs transition-all cursor-pointer group"
+    >
       <div className="flex items-start justify-between">
         {/* Outline Folder Icon */}
         <div className="text-[#5D5FEF] p-1.5 rounded-lg group-hover:bg-[#EEF2FF] transition-colors">

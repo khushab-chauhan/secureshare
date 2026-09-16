@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   ChevronRight, 
   LayoutGrid, 
   List, 
   ChevronDown,
   Monitor,
-  Smartphone
+  Smartphone,
+  FolderPlus
 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -13,7 +14,18 @@ import { FolderCard } from './components/FolderCard';
 import { FileCard } from './components/FileCard';
 import { ShareModal } from './components/ShareModal';
 import { MobileView } from './components/MobileView';
+import { NewFolderModal } from './components/NewFolderModal';
+import { api } from './api/client';
+import type { Breadcrumb } from './api/client';
 import type { FolderItem, FileItem } from './types';
+
+// Fallback initial folders matching Figma Screenshot 1
+const DEFAULT_FOLDERS: FolderItem[] = [
+  { id: '1', name: 'Brand Guidelines', filesCount: 18, updatedDate: 'Jan 12, 2026' },
+  { id: '2', name: 'Financial Audits', filesCount: 7, updatedDate: 'Jan 10, 2026' },
+  { id: '3', name: 'Marketing Collateral', filesCount: 24, updatedDate: 'Jan 08, 2026' },
+  { id: '4', name: 'Investor Reports', filesCount: 5, updatedDate: 'Jan 05, 2026' },
+];
 
 export function App() {
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
@@ -26,17 +38,15 @@ export function App() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [devicePreview, setDevicePreview] = useState<'desktop' | 'mobile'>(initialView);
   
+  // Folder Hierarchy & Breadcrumb State
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+  const [folders, setFolders] = useState<FolderItem[]>(DEFAULT_FOLDERS);
+  const [isNewFolderModalOpen, setIsNewFolderModalOpen] = useState(false);
+
   // Share Modal State
   const [isShareModalOpen, setIsShareModalOpen] = useState(initialModal);
   const [selectedFileName, setSelectedFileName] = useState('Fintrex_PitchDeck_2026.pdf');
-
-  // Initial Folders matching Figma Screenshot 1
-  const [folders] = useState<FolderItem[]>([
-    { id: '1', name: 'Brand Guidelines', filesCount: 18, updatedDate: 'Jan 12, 2026' },
-    { id: '2', name: 'Financial Audits', filesCount: 7, updatedDate: 'Jan 10, 2026' },
-    { id: '3', name: 'Marketing Collateral', filesCount: 24, updatedDate: 'Jan 08, 2026' },
-    { id: '4', name: 'Investor Reports', filesCount: 5, updatedDate: 'Jan 05, 2026' },
-  ]);
 
   // Initial Files matching Figma Screenshot 1
   const [files, setFiles] = useState<FileItem[]>([
@@ -75,6 +85,71 @@ export function App() {
       previewType: 'pdf',
     },
   ]);
+
+  // Load folders from backend with auto-auth
+  const loadFolders = useCallback(async (parentId: string | null = null) => {
+    try {
+      // Check auth / auto-login
+      if (!localStorage.getItem('secureshare_access_token')) {
+        try {
+          await api.login('khushab@secureshare.io', 'Password123!');
+        } catch {
+          // If login fails, try to register
+          await api.register('khushab@secureshare.io', 'Password123!', 'Khushab Chauhan');
+          await api.login('khushab@secureshare.io', 'Password123!');
+        }
+      }
+
+      const backendFolders = await api.getFolders(parentId);
+      if (backendFolders && backendFolders.length > 0) {
+        const formatted: FolderItem[] = backendFolders.map(f => {
+          const date = new Date(f.updated_at);
+          const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+          return {
+            id: f.id,
+            name: f.name,
+            filesCount: (f as any).files_count || 0,
+            updatedDate: dateStr,
+          };
+        });
+        setFolders(formatted);
+      } else if (parentId === null) {
+        setFolders(DEFAULT_FOLDERS);
+      } else {
+        setFolders([]);
+      }
+
+      // Update breadcrumbs
+      if (parentId) {
+        const detail = await api.getFolder(parentId);
+        setBreadcrumbs(detail.breadcrumbs || [{ id: detail.id, name: detail.name }]);
+      } else {
+        setBreadcrumbs([]);
+      }
+    } catch (err) {
+      console.warn('Could not load folders from backend, using fallback data:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFolders(currentFolderId);
+  }, [currentFolderId, loadFolders]);
+
+  const handleFolderClick = (folderId: string) => {
+    // Only drill down if it's a valid UUID from backend
+    if (folderId.includes('-')) {
+      setCurrentFolderId(folderId);
+    }
+  };
+
+  const handleBreadcrumbClick = (folderId: string | null) => {
+    setCurrentFolderId(folderId);
+  };
+
+  const handleCreateFolder = async (name: string) => {
+    await api.createFolder(name, currentFolderId);
+    await loadFolders(currentFolderId);
+  };
 
   const handleOpenShare = (fileName?: string) => {
     if (fileName) setSelectedFileName(fileName);
@@ -153,13 +228,33 @@ export function App() {
               {/* Breadcrumbs & View Bar */}
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  {/* Breadcrumb Path */}
+                  {/* Dynamic Breadcrumb Path */}
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-slate-500 font-medium hover:text-slate-800 cursor-pointer">My Drive</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-slate-500 font-medium hover:text-slate-800 cursor-pointer">Projects</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="font-bold text-slate-900">2026 Pitch Deck</span>
+                    <span 
+                      onClick={() => handleBreadcrumbClick(null)}
+                      className={`font-medium transition-colors cursor-pointer ${
+                        breadcrumbs.length === 0 ? 'font-bold text-slate-900' : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      My Drive
+                    </span>
+                    
+                    {breadcrumbs.map((bc, idx) => {
+                      const isLast = idx === breadcrumbs.length - 1;
+                      return (
+                        <div key={bc.id} className="flex items-center gap-2">
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                          <span 
+                            onClick={() => !isLast && handleBreadcrumbClick(bc.id)}
+                            className={`font-medium transition-colors ${
+                              isLast ? 'font-bold text-slate-900' : 'text-slate-500 hover:text-slate-800 cursor-pointer'
+                            }`}
+                          >
+                            {bc.name}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Right View & Sort Controls */}
@@ -214,16 +309,32 @@ export function App() {
 
               {/* Folders Section */}
               <section>
-                <h2 className="text-sm font-semibold text-slate-900 mb-3.5">Folders</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                  {folders.map((folder) => (
-                    <FolderCard 
-                      key={folder.id} 
-                      folder={folder} 
-                      onOpenMenu={() => handleOpenShare(folder.name)}
-                    />
-                  ))}
+                <div className="flex items-center justify-between mb-3.5">
+                  <h2 className="text-sm font-semibold text-slate-900">Folders</h2>
+                  <button 
+                    onClick={() => setIsNewFolderModalOpen(true)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-[#5D5FEF] hover:text-[#4F46E5] bg-[#EEF2FF] hover:bg-[#E0E7FF] px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    <span>New Folder</span>
+                  </button>
                 </div>
+                {folders.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    {folders.map((folder) => (
+                      <FolderCard 
+                        key={folder.id} 
+                        folder={folder} 
+                        onClick={() => handleFolderClick(folder.id)}
+                        onOpenMenu={() => handleOpenShare(folder.name)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center bg-white border border-dashed border-slate-200 rounded-2xl">
+                    <p className="text-xs text-slate-400 font-medium">This folder is empty</p>
+                  </div>
+                )}
               </section>
 
               {/* Recent Files Section */}
@@ -260,6 +371,14 @@ export function App() {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         fileName={selectedFileName}
+      />
+
+      {/* New Folder Modal */}
+      <NewFolderModal
+        isOpen={isNewFolderModalOpen}
+        onClose={() => setIsNewFolderModalOpen(false)}
+        onCreateFolder={handleCreateFolder}
+        currentParentName={breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1].name : 'My Drive'}
       />
 
     </div>
